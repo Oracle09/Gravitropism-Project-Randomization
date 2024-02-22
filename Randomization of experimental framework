@@ -1,0 +1,82 @@
+##Script to randomize the gravitropism experiment
+##Date: 02/20/2024
+#Author: Gbolaga Olanrewaju
+
+#Describe scenario
+#Check Experimental framework document for picture 
+
+library(dplyr)
+
+# Define the setup parameters
+time_points <- c(0, 30, 120, 360) # in minutes
+groups <- c("Treatment", "Control")
+biological_replicates <- 1:3 #3 replicates per time point
+plates_per_replicate <- 15   # 15 plates makes a replicate. Each plate contains 13 seedlings. This last info is irrelevant
+total_plates <- length(time_points) * length(groups) * length(biological_replicates) * plates_per_replicate #(I have not accounted for general baseline)
+
+# Create a dataframe representing all the plates in the experiment
+experiment_setup <- expand.grid(
+  TimePoint = time_points,
+  Group = groups,
+  BiologicalReplicate = biological_replicates,
+  PlateNumber = 1:plates_per_replicate
+) %>% 
+  mutate(BatchID = 1:n())
+
+
+## Adjust for the single baseline representative: 
+# Remove extra baseline entries and adjust total plate count
+experiment_setup <- experiment_setup %>% 
+  filter(!(TimePoint == 0 & Group == "Control")) %>%
+  mutate(TotalPlates = n())
+
+# Randomize the order of the plates to minimize batch effects
+set.seed(123) # For reproducibility
+experiment_setup <- experiment_setup[sample(nrow(experiment_setup)), ]
+
+# Assign plates to batches based on my 20 apparatus limit
+apparatus_limit <- 20
+experiment_setup$BatchAssignment <- ceiling(seq(1, nrow(experiment_setup)) / apparatus_limit)
+
+
+# Calculate the start day for each batch, assuming each batch runs for 8 days
+experiment_setup$StartDay <- (experiment_setup$BatchAssignment - 1) * 8 + 1   #I will explain the logic behind this
+
+#This is to ensure that each batch runs for 8 days interval
+#For Batch 1: (1 - 1) * 8 + 1 = 1, indicating it starts on day 1, which is correct.
+#For Batch 2: (2 - 1) * 8 + 1 = 9, indicating it starts on day 9, exactly 8 days after batch 1, 
+# which aligns with the requirement that each batch runs for 8 days before the next batch begins.
+
+
+write.csv(experiment_setup, "randomized_gravitropism(8days).csv", row.names = FALSE)
+
+
+
+
+
+#Description of resulting dataset
+
+#csv file of 8 columns
+#c(TimePoint,	Group,	BiologicalReplicate,	PlateNumber,	BatchID,	TotalPlates,	BatchAssignment,	StartDay)
+#   360	    Treatment	    2	                  9	            204	        315	            1	              1
+
+
+#Make graph based on this to create visuals
+
+library(ggplot2)
+#Concatenate columns 1 and 2
+
+experiment_setup$ID <- paste(experiment_setup$TimePoint, experiment_setup$Group,sep = " ")
+
+#Sort by Batch Assignment 
+a <- experiment_setup %>% arrange(experiment_setup$BatchAssignment)   ###this is redundant. Batch assignment is already sorted (hahahah)
+
+# To Count occurrences of each ID within each BatchAssignment
+b<- a %>%
+  group_by(BatchAssignment, ID) %>%
+  summarise(Count = n(), .groups = 'drop') %>%
+  arrange(BatchAssignment, ID)
+
+# View the result
+print(b)
+write.csv(b,"gravitropism_setup REAL.csv")
